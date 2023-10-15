@@ -28,3 +28,19 @@ def add_user(user: Tuple[int,str, str, str, str, str, str, str]):
         """, user)
     conn.commit()
     conn.close()
+
+def get_user_state(nID: str) -> str:
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT state FROM users WHERE national_id = %s", (nID,))
+    result = cursor.fetchone()
+    conn.close()
+    return result
+
+def get_username(nID:str) -> str:
+    conn = connect_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT username FROM users WHERE national_id = %s", (nID,))
+    result = cursor.fetchone()
+    conn.close()
+    return result
