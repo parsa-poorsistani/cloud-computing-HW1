@@ -20,10 +20,10 @@ RUN go build -o main .
 FROM alpine:latest
 
 # Copy the binary from the builder stage to the current stage
-COPY --from=builder /app/main /app/main
+COPY --from=builder /app /app
 
 # Expose the port the app runs on
 EXPOSE 8080
 
 # Command to run the application
-CMD ["/app/main"]
+CMD ["/app/main.go"]
