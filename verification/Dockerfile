@@ -1,5 +1,5 @@
 # Start from the latest Golang base image
-FROM golang:alpine AS builder
+FROM golang:latest AS builder
 
 # Set the current working directory inside the container
 WORKDIR /app
@@ -14,9 +14,15 @@ RUN go mod download
 COPY . .
 
 # Build the Go app
-RUN go build -o main .
+RUN go build -o /main main.go
+# Use a minimal alpine image for the final stage of the build
+FROM alpine:latest
+
+# Copy the binary from the builder stage to the current stage
+COPY --from=builder /main /main
+
 # Expose the port the app runs on
 EXPOSE 8080
 
 # Command to run the application
-CMD ["/app/main"]
+CMD ["/main"]
