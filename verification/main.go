@@ -2,20 +2,60 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/ses"
 	"github.com/joho/godotenv"
 	"github.com/streadway/amqp"
 )
+
+const (
+	Sender  = "poorsistani13@gmail.com"
+	CharSet = "UTF-8"
+)
+
+
+func sendEmail(to string, subject string, body string) error {
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String("us-east-2"),
+	})
+	if err != nil {
+		return err
+	}
+
+	sesClient := ses.New(sess)
+
+	emailParams := &ses.SendEmailInput{
+		Destination: &ses.Destination{
+			ToAddresses: []*string{aws.String(to)},
+		},
+		Message: &ses.Message{
+			Subject: &ses.Content{
+				Data: aws.String(subject),
+			},
+			Body: &ses.Body{
+				Text: &ses.Content{
+					Data: aws.String(body),
+				},
+			},
+		},
+		Source: aws.String(Sender),
+	}
+
+	_, err = sesClient.SendEmail(emailParams)
+	return err
+}
 
 func connectToRabbitMQ() (*amqp.Connection, error) {
 	conn, err := amqp.Dial(os.Getenv("ampq_url"))
@@ -142,6 +182,32 @@ func handleMessages(conn *amqp.Connection) {
 	<-forever
 }
 
+func getUserEmail(username string) (string, error) {
+	connStr := os.Getenv("DB_CONNECTION_STRING")
+	if connStr == "" {
+		return "", fmt.Errorf("DB_CONNECTION_STRING environment variable is not set")
+	}
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to open database connection: %w", err)
+	}
+	defer func() {
+		closeErr := db.Close()
+		if closeErr != nil {
+			log.Printf("failed to close database connection: %v", closeErr)
+		}
+	}()
+
+	var email string
+	err = db.QueryRow("SELECT email FROM users WHERE username = $1", username).Scan(&email)
+	if err != nil {
+		return "", fmt.Errorf("failed to get user email: %w", err)
+	}
+
+	return email, nil
+}
+
 func getS3ImagesBase64(username string) (string, string, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Credentials: credentials.NewStaticCredentials(os.Getenv("arvan_access_key"), os.Getenv("arvan_secret_key"), ""),
@@ -194,13 +260,83 @@ func processMessage(username string) {
 	}
 
 	// 2. Verify faces using face detection service
-	
+	faceID1, err := faceDetection(i1)
+	if err != nil {
+		if faceID1 == "" {
+			updateUserState(username, "rejected")
+			return
+		}
+	}
+
+	faceID2, err := faceDetection(i2)
+	if err != nil {
+		if faceID2 == "" {
+			updateUserState(username, "rejected")
+			return
+		}
+	}
 	// 3. Compute similarity using face similarity service
+	similarityScore, err := faceSimilarity(faceID1, faceID2)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+	var verificationResult string
+	if similarityScore < 80 {
+		err = updateUserState(username, "rejected")
+		if err != nil {
+			log.Fatal(err)
+		}
+		verificationResult = "rejected"
+	} else {
+		err = updateUserState(username, "accepted")
+		if err != nil {
+			log.Fatal(err)
+		}
+		verificationResult = "accepted"
+	}
+
 	// 4. If similarity > 80%, send email and update database
+
+	if err != nil {
+		log.Printf("Error updating database for username %s: %v", username, err)
+		return
+	}
+	//send email
+	userEmail, err := getUserEmail(username)
+	if err != nil {
+		log.Printf("Error fetching email for username %s: %v", username, err)
+		return
+	}
+
+	subject := fmt.Sprintf("Verification Result for %s", username)
+	body := fmt.Sprintf("Your verification has been %s. Similarity Score: %.2f", verificationResult, similarityScore)
+	err = sendEmail(userEmail, subject, body)
+	if err != nil {
+		log.Printf("Error sending email to user %s: %v", username, err)
+	}
 }
 
-func updateUserState(username string) {
-
+func updateUserState(username string, newState string) error {
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		return fmt.Errorf("DB_CONNECTION_STRING environment variable is not set")
+	}
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return fmt.Errorf("failed to open database connection: %w", err)
+	}
+	defer func() {
+		closeErr := db.Close()
+		if closeErr != nil {
+			log.Printf("failed to close database connection: %v", closeErr)
+		}
+	}()
+	_, err = db.Exec("UPDATE users SET state=$1 WHERE username=$2", newState, username)
+	if err != nil {
+		return fmt.Errorf("failed to update database: %w", err)
+	}
+	return nil
 }
 
 func main() {
