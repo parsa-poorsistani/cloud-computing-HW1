@@ -15,7 +15,8 @@ COPY . .
 
 # Build the Go app
 RUN go build -o main .
-
+RUN ls
+RUN ls -al /app
 # Use a minimal alpine image for the final stage of the build
 FROM alpine:latest
 
@@ -26,4 +27,4 @@ COPY --from=builder /app /app
 EXPOSE 8080
 
 # Command to run the application
-CMD ["/app/main.go"]
+CMD ["/app/main"]
