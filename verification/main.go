@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -24,7 +23,6 @@ const (
 	Sender  = "poorsistani13@gmail.com"
 	CharSet = "UTF-8"
 )
-
 
 func sendEmail(to string, subject string, body string) error {
 	sess, err := session.NewSession(&aws.Config{
@@ -127,8 +125,8 @@ func faceSimilarity(faceID1, faceID2 string) (float64, error) {
 	}
 	var result struct {
 		Result struct {
-			Score float64 `json:score`
-		} `json:result`
+			Score float64 `json:"score"`
+		} `json:"result"`
 	}
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
