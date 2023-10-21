@@ -1,28 +1,17 @@
-# Start from the latest Golang base image
-FROM golang:latest AS builder
+# Start from the latest golang base image
+FROM golang:latest
 
 # Set the current working directory inside the container
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Copy go.mod and go.sum files to the workspace
-COPY go.mod go.sum ./
-
-# Download all dependencies
-RUN go mod download
-
-# Copy the source from the current directory to the working directory inside the container
+# Copy the local package files to the container’s workspace.
 COPY . .
-
+RUN go mod download
 # Build the Go app
-RUN go build -o /main main.go
-# Use a minimal alpine image for the final stage of the build
-FROM alpine:latest
+RUN go build -o main .
 
-# Copy the binary from the builder stage to the current stage
-COPY --from=builder /main /main
-
-# Expose the port the app runs on
+# Expose port 8080 to the outside world
 EXPOSE 8080
 
-# Command to run the application
-CMD ["/main"]
+# Run the binary program produced by `go build`
+CMD ["./main"]
