@@ -1,8 +1,10 @@
-from fastapi import FastAPI, HTTPException, UploadFile, Request
+import base64
+from fastapi import FastAPI, HTTPException, UploadFile, Request, Form, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import boto3
 import os
+import hashlib
 from db import add_user, get_user_state, get_username
 import pika
 from botocore.exceptions import ClientError
@@ -24,12 +26,8 @@ def s3_test():
         logging.info(exc)
     else:
         try:
-            # for bucket in s3_client.buckets.all():
-            #     print(f'bucket_name: {bucket.name}')
-            #     logging.info(f'bucket_name: {bucket.name}')
             response = s3_client.head_bucket(Bucket="image-1bucket")
         except ClientError as err:
-            # logging.info(err)
             status = err.response["ResponseMetadata"]["HTTPStatusCode"]
             errcode = err.response["Error"]["Code"]
 
@@ -89,56 +87,39 @@ app = FastAPI()
 class UserInfo(BaseModel):
     email:str
     last_name:str
-    nID:int
+    nID:str
+    image1:bytes
+    image2:bytes
 
 class SubmitResponseModel(BaseModel):
     msg:str
 
 
+@app.get("/test")
+async def test():
+    return {"Hello": "World"}
+
 @app.post("/submit-request/",response_model=SubmitResponseModel)
-async def submit(user_info: UserInfo, image1: UploadFile, image2: UploadFile, request: Request):
+async def submit(user_info: UserInfo, request: Request):
     cIP = request.client.host
     username = user_info.email.split("@")[0] + user_info.last_name
 
     image1_key = f'{username}_image1.jpg'
     image2_key = f'{username}_image2.jpg'
 
+    hashed_id = hashlib.sha256(user_info.nID.encode()).hexdigest()
+
     state = "pending"
-    user = (user_info.nID,username,user_info.email,user_info.last_name,cIP,image1_key,image2_key,state)
-    # bucket = get_s3_resource()
+    user = (hashed_id,username,user_info.email,user_info.last_name,cIP,image1_key,image2_key,state)
     s3_client = get_s3_client()
     if not s3_client:
         return JSONResponse(status_code=500, content={"detail": "Could not initialize S3 client"})
-    upload_file_to_s3(s3_client, image1, image1_key)
-    upload_file_to_s3(s3_client, image2, image2_key)
-    # try:
-    #     file_path = f'images/{image1_key}.jpg'
-    #     object_name = image1_key
-
-    #     with open(file_path, "rb") as file:
-    #         bucket.put_object(
-    #             ACL='private',
-    #             Body=file,
-    #             Key=object_name
-    #         )
-    # except ClientError as e:
-    #     logging.error(e)
-    # try:
-    #     file_path = f'images/{image2_key}.jpg'
-    #     object_name = image2_key
-
-    #     with open(file_path, "rb") as file:
-    #         bucket.put_object(
-    #             ACL='private',
-    #             Body=file,
-    #             Key=object_name
-    #         )
-    # except ClientError as e:
-    #     logging.error(e)
+    upload_file_to_s3(s3_client, writer1, image1_key)
+    upload_file_to_s3(s3_client, writer2, image2_key)
     send_to_queue(username)
     add_user(user)
-    return JSONResponse(status_code=200,content={"your request has submited"})
-
+    return {"Response": "Your request has submitted"}
+    # return JSONResponse(status_code=200,content={"your request has submited"})
 
 def send_to_queue(username:str):
     load_dotenv()
@@ -162,42 +143,13 @@ class StatusResponse(BaseModel):
     status: str
 
 
-@app.post("/status", response_model=StatusResponse)
-async def check_status(request: StatusRequest):
-    status = get_user_state(request.national_id)
+@app.get("/status/{national_id}", response_model=StatusResponse)
+async def check_status(national_id: str):
+    status = get_user_state(national_id)
     if status is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if status == "accepted":
-        username = get_username(request.national_id)
+        username = get_username(national_id)
         return JSONResponse(status_code=200,content={"your verified with username: f{username}"})
     return {"status": status}
 
-def main():
-    load_dotenv()
-    # try:
-    #     s3_client = boto3.client(
-    #         's3',
-    #         endpoint_url=os.getenv('s3_address'),
-    #         aws_access_key_id=os.getenv('arvan_access_key'),
-    #         aws_secret_access_key=os.getenv('arvan_secret_key')
-    #     )
-    # except Exception as exc:
-    #     logging.error(exc)
-    # else:
-    #     try:
-    #         response = s3_client.head_bucket(Bucket="image-1bucket")
-    #     except ClientError as err:
-    #         status = err.response["ResponseMetadata"]["HTTPStatusCode"]
-    #         errcode = err.response["Error"]["Code"]
-
-    #         if status == 404:
-    #             logging.warning("Missing object, %s", errcode)
-    #         elif status == 403:
-    #             logging.error("Access denied, %s", errcode)
-    #         else:
-    #             logging.exception("Error in request, %s", errcode)
-    #     else:
-    #         print(response)
-
-if __name__ == "__main__":
-    main()
