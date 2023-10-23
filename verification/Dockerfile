@@ -1,24 +1,19 @@
-# Start from a Debian image with the latest version of Go installed
-# and a workspace (GOPATH) configured at /go.
-FROM golang:1.17
+FROM golang:1.17 AS Build
 
-# Set the working directory in the container
-WORKDIR /go/src/my-go-app
+WORKDIR /src
 
-# Copy the local package files to the container's workspace.
-COPY . /go/src/my-go-app
+COPY go.mod go.sum ./
 
-# Fetch dependencies.
-# If the Go Modules are enabled, this will also download the dependencies
-# specified in the go.mod and go.sum files.
 RUN go mod download
 
-# Build the my-go-app command inside the container.
-# This will build the binaries of your Go app.
-RUN go build -o my-go-app .
+COPY . .
 
-# Run the my-go-app command by default when the container starts.
-ENTRYPOINT ["/go/src/my-go-app/my-go-app"]
+RUN CGO_ENABLED=0 GOOS=linux go build -o app .
 
-# Document that the service listens on port 8080.
-EXPOSE 8080
+FROM alpine
+
+WORKDIR /app
+
+COPY --from=Build /src/app .
+
+CMD [ "./app" ]
