@@ -76,8 +76,6 @@ app = FastAPI()
 @app.get("/test")
 async def test():
     return {"Hello": "World"}
-    image2: UploadFile
-
 class SubmitResponseModel(BaseModel):
     msg:str
 
@@ -116,11 +114,6 @@ def send_to_queue(username:str):
     print(" [x] Sent 'Hello World!'")
 
     connection.close()
-
-
-class StatusRequest(BaseModel):
-    national_id: str
-
 class StatusResponse(BaseModel):
     username: str
     status: str
