@@ -1,12 +1,10 @@
 version: '3'
 services:
   python-app:
-    build: ./request
+    build: ./api
     ports:
-      - "8000:80"
+      - "8000:8000"
   go-app:
     build: ./verification
     ports:
       - "8080:8080"
-    env_file:
-      - .env
